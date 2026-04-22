@@ -50,6 +50,22 @@ export function useDrive() {
     }
   }, [connect])
 
+  const imageDataToFile = (slide) => {
+    if (slide.file) return slide.file
+    if (!slide.imageData) return null
+    try {
+      const [meta, base64] = slide.imageData.split(',')
+      const mime = (meta.match(/data:([^;]+)/) || [])[1] || 'image/png'
+      const bin = atob(base64)
+      const bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      const ext = mime.split('/')[1] || 'png'
+      return new File([bytes], `slide_${slide.id}.${ext}`, { type: mime })
+    } catch {
+      return null
+    }
+  }
+
   const saveWorkspace = useCallback(async () => {
     const state = useWorkspaceStore.getState()
     const ws = state.getCurrentWorkspace()
@@ -60,13 +76,15 @@ export function useDrive() {
       if (!connected) return
     }
 
-    const pending = ws.slides.filter((s) => s.type === 'image' && s.file && !s.driveFileId)
+    const pending = ws.slides.filter((s) => s.type === 'image' && !s.driveFileId && (s.file || s.imageData))
     if (pending.length > 0) {
       const toastId = toast.loading(`画像をアップロード中 (0/${pending.length})`)
       try {
         for (let i = 0; i < pending.length; i++) {
           const s = pending[i]
-          await uploadImageToDrive(s.file, ws.id, s.id)
+          const file = imageDataToFile(s)
+          if (!file) continue
+          await uploadImageToDrive(file, ws.id, s.id)
           toast.loading(`画像をアップロード中 (${i + 1}/${pending.length})`, { id: toastId })
         }
         toast.dismiss(toastId)

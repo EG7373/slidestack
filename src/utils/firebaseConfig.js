@@ -8,6 +8,8 @@ const firebaseConfig = {
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
 }
 
+const firestoreEnabled = import.meta.env.VITE_FIRESTORE_ENABLED === 'true'
+
 let app = null
 let db = null
 let auth = null
@@ -20,7 +22,7 @@ export function initFirebase() {
 
   if (!app) {
     app = initializeApp(firebaseConfig)
-    db = getFirestore(app)
+    db = firestoreEnabled ? getFirestore(app) : null
     auth = getAuth(app)
   }
 
