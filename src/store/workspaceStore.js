@@ -1,6 +1,11 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import { nanoid } from 'nanoid'
+import { idbStorage } from '../utils/idbStorage'
+
+if (typeof localStorage !== 'undefined') {
+  try { localStorage.removeItem('slidestack-workspace') } catch {}
+}
 
 const formatDate = () => {
   const d = new Date()
@@ -411,6 +416,7 @@ export const useWorkspaceStore = create(
     {
       name: 'slidestack-workspace',
       version: 1,
+      storage: createJSONStorage(() => idbStorage),
       partialize: (state) => ({
         workspaces: Object.fromEntries(
           Object.entries(state.workspaces).map(([id, ws]) => [
