@@ -15,7 +15,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import InsertMenu from './InsertMenu'
 
-function SortableThumb({ slide, index, isActive, onClick }) {
+function SortableThumb({ slide, index, isActive, onClick, onDelete, canDelete }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: slide.id })
 
@@ -27,6 +27,14 @@ function SortableThumb({ slide, index, isActive, onClick }) {
 
   const uploadStatus = useWorkspaceStore((s) => s.uploadStatuses[slide.id])
 
+  const handleDeleteClick = (e) => {
+    e.stopPropagation()
+    if (!canDelete) return
+    if (window.confirm(`スライド ${index + 1} を削除しますか？`)) {
+      onDelete(slide.id)
+    }
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -35,7 +43,7 @@ function SortableThumb({ slide, index, isActive, onClick }) {
       {...listeners}
       onClick={() => onClick(index)}
       className={`
-        relative cursor-pointer rounded-md overflow-hidden border-2 transition-colors
+        group relative cursor-pointer rounded-md overflow-hidden border-2 transition-colors
         ${isActive ? 'border-accent shadow-md' : 'border-transparent hover:border-gray-300'}
       `}
     >
@@ -62,6 +70,17 @@ function SortableThumb({ slide, index, isActive, onClick }) {
       {uploadStatus === 'error' && (
         <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-[8px] font-bold">!</div>
       )}
+      {canDelete && (
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={handleDeleteClick}
+          className="absolute top-1 left-1 w-5 h-5 bg-white/90 hover:bg-red-500 hover:text-white text-gray-500 rounded-full flex items-center justify-center text-xs leading-none shadow opacity-0 group-hover:opacity-100 transition-opacity"
+          title="このスライドを削除"
+        >
+          ×
+        </button>
+      )}
     </div>
   )
 }
@@ -73,6 +92,7 @@ export default function SlidePanel() {
     currentSlideIndex,
     setCurrentSlide,
     reorderSlides,
+    removeSlide,
   } = useWorkspaceStore()
 
   const ws = getCurrentWorkspace()
@@ -111,6 +131,8 @@ export default function SlidePanel() {
                 index={index}
                 isActive={index === currentSlideIndex}
                 onClick={setCurrentSlide}
+                onDelete={removeSlide}
+                canDelete={ws.slides.length > 1}
               />
             ))}
           </SortableContext>

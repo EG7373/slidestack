@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { useDrive } from '../hooks/useDrive'
 import ViewerSlide from './ViewerSlide'
 import ViewerNav from './ViewerNav'
 
@@ -30,6 +31,19 @@ export default function ViewerMode() {
   const slides = ws?.slides || []
   const totalSlides = slides.length
   const currentSlide = slides[slideIndex] || null
+  const { downloadImage } = useDrive()
+  const { updateSlide } = useWorkspaceStore()
+
+  useEffect(() => {
+    if (!currentSlide || currentSlide.type !== 'image') return
+    if (!currentSlide.driveFileId || currentSlide.blobUrl) return
+    let cancelled = false
+    downloadImage(currentSlide.driveFileId).then((blobUrl) => {
+      if (cancelled || !blobUrl) return
+      updateSlide(currentSlide.id, { blobUrl })
+    })
+    return () => { cancelled = true }
+  }, [currentSlide?.id, currentSlide?.driveFileId, currentSlide?.blobUrl, currentSlide?.type, downloadImage, updateSlide])
 
   const goTo = useCallback((index) => {
     setSlideIndex(Math.max(0, Math.min(index, totalSlides - 1)))

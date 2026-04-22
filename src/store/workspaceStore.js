@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { nanoid } from 'nanoid'
 
 const formatDate = () => {
@@ -19,11 +20,12 @@ const createBlankSlide = () => ({
   annotations: [],
 })
 
-const createImageSlide = (blobUrl, file = null) => ({
+const createImageSlide = (blobUrl, file = null, imageData = null) => ({
   id: nanoid(),
   order: 0,
   type: 'image',
   imageUrl: null,
+  imageData,
   blobUrl,
   file,
   driveFileId: null,
@@ -32,7 +34,9 @@ const createImageSlide = (blobUrl, file = null) => ({
   annotations: [],
 })
 
-export const useWorkspaceStore = create((set, get) => ({
+export const useWorkspaceStore = create(
+  persist(
+    (set, get) => ({
   workspaces: {},
   currentWorkspaceId: null,
   currentSlideIndex: 0,
@@ -369,6 +373,82 @@ export const useWorkspaceStore = create((set, get) => ({
   setLastSaved: () => {
     set({ lastSavedAt: Date.now() })
   },
-}))
+
+  importWorkspace: (data) => {
+    const id = data.id || nanoid(10)
+    const ws = {
+      id,
+      name: data.name || `スライドブック_${formatDate()}`,
+      createdAt: data.createdAt || new Date().toISOString(),
+      updatedAt: data.updatedAt || new Date().toISOString(),
+      aspectRatio: data.aspectRatio || '16:9',
+      driveJsonFileId: data.driveJsonFileId || null,
+      slides: (data.slides || []).map((s) => ({
+        id: s.id || nanoid(),
+        order: s.order ?? 0,
+        type: s.type || 'blank',
+        imageUrl: s.imageUrl || null,
+        imageData: s.imageData || null,
+        blobUrl: s.blobUrl || null,
+        file: null,
+        driveFileId: s.imageFileId || s.driveFileId || null,
+        uploadStatus: 'idle',
+        textBoxes: s.textBoxes || [],
+        annotations: s.annotations || [],
+      })),
+    }
+    set((state) => ({
+      workspaces: { ...state.workspaces, [id]: ws },
+      currentWorkspaceId: id,
+      currentSlideIndex: 0,
+      selectedElementId: null,
+      selectedElementType: null,
+      lastModifiedAt: Date.now(),
+    }))
+    return id
+  },
+    }),
+    {
+      name: 'slidestack-workspace',
+      version: 1,
+      partialize: (state) => ({
+        workspaces: Object.fromEntries(
+          Object.entries(state.workspaces).map(([id, ws]) => [
+            id,
+            {
+              ...ws,
+              slides: (ws.slides || []).map((s) => ({
+                ...s,
+                blobUrl: null,
+                file: null,
+                uploadStatus: 'idle',
+              })),
+            },
+          ])
+        ),
+        currentWorkspaceId: state.currentWorkspaceId,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (!state?.workspaces) return
+        for (const ws of Object.values(state.workspaces)) {
+          for (const s of ws.slides || []) {
+            if (s.type === 'image' && s.imageData && !s.blobUrl) {
+              try {
+                const [meta, base64] = s.imageData.split(',')
+                const mime = (meta.match(/data:([^;]+)/) || [])[1] || 'application/octet-stream'
+                const bin = atob(base64)
+                const bytes = new Uint8Array(bin.length)
+                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+                s.blobUrl = URL.createObjectURL(new Blob([bytes], { type: mime }))
+              } catch {
+                s.blobUrl = null
+              }
+            }
+          }
+        }
+      },
+    }
+  )
+)
 
 export { createBlankSlide, createImageSlide }

@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { useWorkspaceStore, createBlankSlide, createImageSlide } from '../store/workspaceStore'
+import { fileToDataUrl } from '../utils/workspaceBundle'
 
 export default function InsertMenu({ onClose }) {
   const fileInputRef = useRef(null)
@@ -14,12 +15,13 @@ export default function InsertMenu({ onClose }) {
     fileInputRef.current?.click()
   }
 
-  const handleFiles = (e) => {
+  const handleFiles = async (e) => {
     const files = Array.from(e.target.files || [])
-    files.forEach((file) => {
+    for (const file of files) {
       const blobUrl = URL.createObjectURL(file)
-      addSlide(createImageSlide(blobUrl, file))
-    })
+      const imageData = await fileToDataUrl(file).catch(() => null)
+      addSlide(createImageSlide(blobUrl, file, imageData))
+    }
     onClose()
   }
 

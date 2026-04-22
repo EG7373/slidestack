@@ -1,8 +1,10 @@
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { restrictToParentElement } from '@dnd-kit/modifiers'
 import { useWorkspaceStore, createImageSlide } from '../store/workspaceStore'
+import { useDrive } from '../hooks/useDrive'
+import { fileToDataUrl } from '../utils/workspaceBundle'
 import TextBox from './TextBox'
 import Annotation from './Annotation'
 
@@ -22,17 +24,30 @@ export default function SlideCanvas() {
 
   const ws = getCurrentWorkspace()
   const slide = getCurrentSlide()
+  const { downloadImage } = useDrive()
+
+  useEffect(() => {
+    if (!slide || slide.type !== 'image' || !slide.driveFileId || slide.blobUrl) return
+    let cancelled = false
+    downloadImage(slide.driveFileId).then((blobUrl) => {
+      if (cancelled || !blobUrl) return
+      updateSlide(slide.id, { blobUrl })
+    })
+    return () => { cancelled = true }
+  }, [slide?.id, slide?.driveFileId, slide?.blobUrl, slide?.type, downloadImage, updateSlide])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 3 } })
   )
 
-  const onDrop = useCallback((acceptedFiles) => {
+  const onDrop = useCallback(async (acceptedFiles) => {
     if (!slide || acceptedFiles.length === 0) return
     const file = acceptedFiles[0]
     const blobUrl = URL.createObjectURL(file)
     if (slide.blobUrl) URL.revokeObjectURL(slide.blobUrl)
-    updateSlide(slide.id, { type: 'image', blobUrl, file })
+    updateSlide(slide.id, { type: 'image', blobUrl, file, imageData: null, driveFileId: null })
+    const imageData = await fileToDataUrl(file).catch(() => null)
+    if (imageData) updateSlide(slide.id, { imageData })
   }, [slide, updateSlide])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

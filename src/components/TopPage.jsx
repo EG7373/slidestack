@@ -1,19 +1,28 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDropzone } from 'react-dropzone'
+import toast from 'react-hot-toast'
 import { useWorkspaceStore, createImageSlide, createBlankSlide } from '../store/workspaceStore'
+import { useDrive } from '../hooks/useDrive'
+import { readBundleFile, fileToDataUrl } from '../utils/workspaceBundle'
 
 export default function TopPage() {
   const [wsName, setWsName] = useState('')
+  const [driveFiles, setDriveFiles] = useState(null)
+  const [loadingDrive, setLoadingDrive] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const bundleInputRef = useRef(null)
   const navigate = useNavigate()
-  const { createWorkspace, workspaces } = useWorkspaceStore()
+  const { createWorkspace, workspaces, importWorkspace } = useWorkspaceStore()
+  const { listWorkspaces, loadWorkspace } = useDrive()
 
-  const onDrop = useCallback((acceptedFiles) => {
+  const onDrop = useCallback(async (acceptedFiles) => {
     if (acceptedFiles.length === 0) return
-    const slides = acceptedFiles.map((file) => {
+    const slides = await Promise.all(acceptedFiles.map(async (file) => {
       const blobUrl = URL.createObjectURL(file)
-      return createImageSlide(blobUrl, file)
-    })
+      const imageData = await fileToDataUrl(file).catch(() => null)
+      return createImageSlide(blobUrl, file, imageData)
+    }))
     const id = createWorkspace(wsName, slides)
     navigate(`/workspace/${id}`)
   }, [wsName, createWorkspace, navigate])
@@ -26,6 +35,46 @@ export default function TopPage() {
   const handleCreateBlank = () => {
     const id = createWorkspace(wsName, [createBlankSlide()])
     navigate(`/workspace/${id}`)
+  }
+
+  const handleOpenDriveList = async () => {
+    setLoadingDrive(true)
+    const files = await listWorkspaces()
+    setDriveFiles(files)
+    setLoadingDrive(false)
+  }
+
+  const handleRestoreFile = async (file) => {
+    setLoadingDrive(true)
+    const data = await loadWorkspace(file.id)
+    setLoadingDrive(false)
+    if (!data) return
+    const id = importWorkspace({ ...data, driveJsonFileId: file.id })
+    toast.success('ワークスペースを復元しました')
+    navigate(`/workspace/${id}`)
+  }
+
+  const handleBundleFile = async (file) => {
+    if (!file) return
+    setImporting(true)
+    const toastId = toast.loading('インポート中…')
+    try {
+      const data = await readBundleFile(file)
+      const id = importWorkspace(data)
+      toast.success('インポートしました', { id: toastId })
+      navigate(`/workspace/${id}`)
+    } catch (err) {
+      console.error('bundle import error:', err)
+      toast.error('ファイルを読み込めませんでした', { id: toastId })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const onBundleInputChange = (e) => {
+    const file = e.target.files?.[0]
+    if (file) handleBundleFile(file)
+    e.target.value = ''
   }
 
   const recentWorkspaces = Object.values(workspaces)
@@ -82,6 +131,65 @@ export default function TopPage() {
         >
           + 空のワークスペースを作成
         </button>
+
+        <button
+          onClick={handleOpenDriveList}
+          disabled={loadingDrive}
+          className="w-full mt-2 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
+        >
+          {loadingDrive ? '読み込み中…' : '📥 Google Driveから復元'}
+        </button>
+
+        <input
+          ref={bundleInputRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={onBundleInputChange}
+        />
+        <button
+          onClick={() => bundleInputRef.current?.click()}
+          disabled={importing}
+          className="w-full mt-2 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
+          title="エクスポート済みのJSONファイル（.slidestack.json）を読み込みます"
+        >
+          {importing ? '読み込み中…' : '📦 JSONファイルからインポート'}
+        </button>
+
+        {driveFiles !== null && (
+          <div className="mt-4 bg-white border border-gray-200 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-700">Drive上のワークスペース</h3>
+              <button
+                onClick={() => setDriveFiles(null)}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                閉じる
+              </button>
+            </div>
+            {driveFiles.length === 0 ? (
+              <p className="text-sm text-gray-400 py-3 text-center">
+                Driveに保存されたワークスペースはありません
+              </p>
+            ) : (
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+                {driveFiles.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => handleRestoreFile(f)}
+                    disabled={loadingDrive}
+                    className="w-full text-left px-3 py-2 rounded hover:bg-gray-50 text-sm disabled:opacity-50"
+                  >
+                    <div className="font-medium text-gray-800 truncate">{f.name}</div>
+                    <div className="text-xs text-gray-400">
+                      {new Date(f.modifiedTime).toLocaleString('ja-JP')}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {recentWorkspaces.length > 0 && (
           <div className="mt-8">

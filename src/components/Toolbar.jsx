@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { useDrive } from '../hooks/useDrive'
+import { buildBundle, downloadBundle } from '../utils/workspaceBundle'
 
 export default function Toolbar() {
   const navigate = useNavigate()
   const [exporting, setExporting] = useState(false)
+  const [bundling, setBundling] = useState(false)
   const {
     getCurrentWorkspace,
     getCurrentSlide,
@@ -16,7 +18,7 @@ export default function Toolbar() {
     lastSavedAt,
     lastModifiedAt,
   } = useWorkspaceStore()
-  const { saveWorkspace, connect } = useDrive()
+  const { saveWorkspace, connect, downloadImage } = useDrive()
 
   const ws = getCurrentWorkspace()
   const slide = getCurrentSlide()
@@ -39,6 +41,27 @@ export default function Toolbar() {
       await connect()
     }
     await saveWorkspace()
+  }
+
+  const handleExportBundle = async () => {
+    if (bundling) return
+    setBundling(true)
+    const toastId = toast.loading('バンドルを作成中…')
+    try {
+      const bundle = await buildBundle(ws, { downloadDriveImage: downloadImage })
+      const missing = bundle.slides.filter((s) => s.type === 'image' && !s.imageData).length
+      downloadBundle(bundle)
+      if (missing > 0) {
+        toast.success(`エクスポートしました（${missing}枚の画像は取得できず空になりました）`, { id: toastId })
+      } else {
+        toast.success('エクスポートしました', { id: toastId })
+      }
+    } catch (err) {
+      console.error('bundle export error:', err)
+      toast.error('エクスポートに失敗しました', { id: toastId })
+    } finally {
+      setBundling(false)
+    }
   }
 
   const handleExportPdf = async () => {
@@ -179,6 +202,15 @@ export default function Toolbar() {
           title="共有リンクをコピー"
         >
           🔗 共有
+        </button>
+
+        <button
+          onClick={handleExportBundle}
+          disabled={bundling}
+          className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
+          title="ワークスペースをJSONファイルとしてエクスポート（画像埋め込み・配布用）"
+        >
+          {bundling ? '⏳ 書き出し中...' : '📦 エクスポート'}
         </button>
 
         <button

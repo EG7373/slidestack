@@ -8,6 +8,7 @@ import {
   saveWorkspaceJson as driveSaveJson,
   loadWorkspaceJson as driveLoadJson,
   downloadImage as driveDownloadImage,
+  listWorkspaceFiles as driveListFiles,
 } from '../utils/driveHelpers'
 
 export function useDrive() {
@@ -41,7 +42,6 @@ export function useDrive() {
         driveFileId: result.fileId,
         imageUrl: result.imageUrl,
       })
-      toast.success('画像を保存しました')
       return result
     } catch (err) {
       useWorkspaceStore.getState().setUploadStatus(slideId, 'error')
@@ -60,13 +60,31 @@ export function useDrive() {
       if (!connected) return
     }
 
+    const pending = ws.slides.filter((s) => s.type === 'image' && s.file && !s.driveFileId)
+    if (pending.length > 0) {
+      const toastId = toast.loading(`画像をアップロード中 (0/${pending.length})`)
+      try {
+        for (let i = 0; i < pending.length; i++) {
+          const s = pending[i]
+          await uploadImageToDrive(s.file, ws.id, s.id)
+          toast.loading(`画像をアップロード中 (${i + 1}/${pending.length})`, { id: toastId })
+        }
+        toast.dismiss(toastId)
+      } catch (err) {
+        toast.error('画像のアップロードに失敗しました', { id: toastId })
+        return
+      }
+    }
+
+    const freshWs = useWorkspaceStore.getState().workspaces[ws.id]
     try {
       const data = {
-        id: ws.id,
-        name: ws.name,
-        createdAt: ws.createdAt,
+        id: freshWs.id,
+        name: freshWs.name,
+        createdAt: freshWs.createdAt,
         updatedAt: new Date().toISOString(),
-        slides: ws.slides.map((s) => ({
+        aspectRatio: freshWs.aspectRatio || '16:9',
+        slides: freshWs.slides.map((s) => ({
           id: s.id,
           order: s.order,
           type: s.type,
@@ -77,13 +95,21 @@ export function useDrive() {
         })),
       }
 
-      await driveSaveJson(ws.id, data, ws.driveJsonFileId, store)
+      const jsonFileId = await driveSaveJson(freshWs.id, data, freshWs.driveJsonFileId, store)
+      if (!freshWs.driveJsonFileId && jsonFileId) {
+        useWorkspaceStore.setState((prev) => ({
+          workspaces: {
+            ...prev.workspaces,
+            [freshWs.id]: { ...prev.workspaces[freshWs.id], driveJsonFileId: jsonFileId },
+          },
+        }))
+      }
       useWorkspaceStore.getState().setLastSaved()
       toast.success('ワークスペースを保存しました')
     } catch (err) {
       toast.error('保存に失敗しました')
     }
-  }, [connect])
+  }, [connect, uploadImageToDrive])
 
   const loadWorkspace = useCallback(async (fileId) => {
     try {
@@ -103,5 +129,19 @@ export function useDrive() {
     }
   }, [])
 
-  return { connect, uploadImageToDrive, saveWorkspace, loadWorkspace, downloadImage }
+  const listWorkspaces = useCallback(async () => {
+    const state = useWorkspaceStore.getState()
+    if (!state.driveConnected) {
+      const connected = await connect()
+      if (!connected) return []
+    }
+    try {
+      return await driveListFiles(store)
+    } catch (err) {
+      toast.error('Driveの一覧取得に失敗しました')
+      return []
+    }
+  }, [connect])
+
+  return { connect, uploadImageToDrive, saveWorkspace, loadWorkspace, downloadImage, listWorkspaces }
 }
