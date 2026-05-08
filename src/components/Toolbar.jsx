@@ -67,33 +67,48 @@ export default function Toolbar() {
   const handleExportPdf = async () => {
     if (exporting) return
     setExporting(true)
+    const container = document.createElement('div')
     try {
       const html2pdf = (await import('html2pdf.js')).default
 
-      const container = document.createElement('div')
       container.style.position = 'absolute'
       container.style.left = '-9999px'
       container.style.top = '0'
+      container.style.width = '1920px'
       document.body.appendChild(container)
 
-      for (const slide of ws.slides) {
+      const imageLoadPromises = []
+      const slides = ws.slides || []
+
+      slides.forEach((slide, index) => {
         const slideDiv = document.createElement('div')
         slideDiv.style.width = '1920px'
         slideDiv.style.height = '1080px'
         slideDiv.style.position = 'relative'
         slideDiv.style.background = '#ffffff'
         slideDiv.style.overflow = 'hidden'
+        if (index < slides.length - 1) {
+          slideDiv.style.pageBreakAfter = 'always'
+          slideDiv.style.breakAfter = 'page'
+        }
 
         if (slide.type === 'image' && (slide.blobUrl || slide.imageUrl)) {
           const img = document.createElement('img')
-          img.src = slide.blobUrl || slide.imageUrl
+          img.crossOrigin = 'anonymous'
           img.style.width = '100%'
           img.style.height = '100%'
           img.style.objectFit = 'contain'
+          imageLoadPromises.push(
+            new Promise((resolve) => {
+              img.onload = () => resolve()
+              img.onerror = () => resolve()
+            })
+          )
+          img.src = slide.blobUrl || slide.imageUrl
           slideDiv.appendChild(img)
         }
 
-        for (const tb of slide.textBoxes) {
+        for (const tb of slide.textBoxes || []) {
           const div = document.createElement('div')
           div.style.position = 'absolute'
           div.style.left = `${tb.x}%`
@@ -105,7 +120,7 @@ export default function Toolbar() {
           slideDiv.appendChild(div)
         }
 
-        for (const ann of slide.annotations) {
+        for (const ann of slide.annotations || []) {
           const div = document.createElement('div')
           div.style.position = 'absolute'
           div.style.left = `${ann.x}%`
@@ -121,26 +136,30 @@ export default function Toolbar() {
         }
 
         container.appendChild(slideDiv)
-      }
+      })
+
+      await Promise.all(imageLoadPromises)
 
       await html2pdf()
         .set({
           margin: 0,
           filename: `${ws.name}.pdf`,
           image: { type: 'jpeg', quality: 0.95 },
-          html2canvas: { scale: 1, useCORS: true, width: 1920, height: 1080 },
+          html2canvas: { scale: 1, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' },
           jsPDF: { unit: 'px', format: [1920, 1080], orientation: 'landscape' },
           pagebreak: { mode: ['css', 'legacy'] },
         })
         .from(container)
         .save()
 
-      document.body.removeChild(container)
       toast.success('PDFをエクスポートしました')
     } catch (err) {
       console.error('PDF export error:', err)
       toast.error('PDFエクスポートに失敗しました')
     } finally {
+      if (container.parentNode) {
+        container.parentNode.removeChild(container)
+      }
       setExporting(false)
     }
   }
