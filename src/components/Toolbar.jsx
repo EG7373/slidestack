@@ -103,20 +103,41 @@ export default function Toolbar() {
 
         const imageLoadPromises = []
 
-        if (slide.type === 'image' && (slide.blobUrl || slide.imageUrl)) {
-          const img = document.createElement('img')
-          img.crossOrigin = 'anonymous'
-          img.style.width = '100%'
-          img.style.height = '100%'
-          img.style.objectFit = 'contain'
-          imageLoadPromises.push(
-            new Promise((resolve) => {
-              img.onload = () => resolve()
-              img.onerror = () => resolve()
-            })
-          )
-          img.src = slide.blobUrl || slide.imageUrl
-          slideDiv.appendChild(img)
+        if (slide.type === 'image') {
+          let dataUrl = slide.imageData && slide.imageData.startsWith('data:')
+            ? slide.imageData
+            : null
+          if (!dataUrl) {
+            const src = slide.blobUrl || slide.imageUrl
+            if (src) {
+              try {
+                const res = await fetch(src)
+                const blob = await res.blob()
+                dataUrl = await new Promise((resolve, reject) => {
+                  const reader = new FileReader()
+                  reader.onload = () => resolve(reader.result)
+                  reader.onerror = reject
+                  reader.readAsDataURL(blob)
+                })
+              } catch (e) {
+                console.warn(`スライド画像の取得に失敗しました (slide ${i + 1}):`, e)
+              }
+            }
+          }
+          if (dataUrl) {
+            const img = document.createElement('img')
+            img.style.width = '100%'
+            img.style.height = '100%'
+            img.style.objectFit = 'contain'
+            imageLoadPromises.push(
+              new Promise((resolve) => {
+                img.onload = () => resolve()
+                img.onerror = () => resolve()
+              })
+            )
+            img.src = dataUrl
+            slideDiv.appendChild(img)
+          }
         }
 
         for (const tb of slide.textBoxes || []) {
